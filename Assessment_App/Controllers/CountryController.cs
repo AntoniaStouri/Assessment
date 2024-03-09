@@ -1,18 +1,9 @@
 ﻿using Assessment_App.Models;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using System.IO;
-using System.Security.Policy;
-using System;
-using System.IO;
+using Microsoft.AspNetCore.Mvc.ViewFeatures;
+using Microsoft.Extensions.Caching.Memory;
 using System.Text.Json;
-using System.Threading.Tasks;
-using Microsoft.VisualBasic;
-using Microsoft.Net.Http.Headers;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using Newtonsoft.Json;
-using static System.Net.WebRequestMethods;
+
 
 
 namespace Assessment_App.Controllers
@@ -21,25 +12,98 @@ namespace Assessment_App.Controllers
     [ApiController]
     public class CountryController : ControllerBase
     {
-        [HttpGet]
-        public async Task<ActionResult> GetCountries()
+        private readonly IMemoryCache _cache;
+        private readonly AppDbContext _context;
+        private List<Countries> root = new();
+
+        public CountryController(ILogger<CountryController> logger, IMemoryCache memoryCache, AppDbContext context)
         {
-
-            var httpClient = new HttpClient();
-
-            HttpResponseMessage response = httpClient.GetAsync(new Uri("https://restcountries.com/v3.1/independent?status=true&fields=name,capital,borders")).Result;
-
-            string responseBody = response.Content.ReadAsStringAsync().Result;
-
-            var countries = JsonConvert.DeserializeObject(responseBody);
-
-
-            return Ok(countries);
+            _cache = memoryCache;
+            _context = context;
         }
 
+        [HttpGet]
+        public async Task<List<Country>> GetCountries()
+        {
+
+            List<Country> countries = new List<Country>();
+            string key = "countriesCacheKey";
+
+
+            if (_cache.TryGetValue<List<Country>>(key, out countries))
+            {
+                return countries;
+            }
+
+            if (_context.Countries.Any())
+            {
+                countries = _context.Countries.ToList();
+                return countries;
+
+
+            }
+            else
+            {
+
+
+                using (HttpClient client = new HttpClient())
+                {
+                    // Make the API request
+                    HttpResponseMessage response = await client.GetAsync("https://restcountries.com/v3.1/independent?status=true&fields=name,capital,borders");
+
+
+                    // Read the response content
+                    string jsonContent = await response.Content.ReadAsStringAsync();
+                    List<Countries> root = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Countries>>(jsonContent);
+
+
+                    //_cache.Set<List<Country>>(key, countries, TimeSpan.FromMinutes(3));
+
+
+                    // Create a new country
+                    foreach (Countries country in root)
+                    {
+                        var newCountry = new Country
+                        {
+                            CommonName = country.Name.Common,
+                            Capital = country.Capital.ToString(),
+                            Borders = new List<Border>()
+                        };
+                        foreach (var borderName in country.Borders)
+                        {
+                            var border = new Border { BorderName = borderName };
+                            newCountry.Borders.Add(border);
+                        }
+                        countries.Add(newCountry);
+                        _context.Countries.Add(newCountry);
+
+
+                        _context.SaveChanges();
+                    }
+                    _cache.Set<List<Country>>(key, countries, TimeSpan.FromMinutes(3));
+                    return countries;
+                }
+            }
+
+
+            // Access the data using the model
+
+
+
+            //return countries;
+
+
+
+
+        }
+
+
+        }
     }
-    }
 
 
 
+
+
+ 
 
