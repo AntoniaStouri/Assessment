@@ -1,6 +1,7 @@
 ﻿using Assessment_App.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using System.Linq.Expressions;
 using System.Reflection.Metadata.Ecma335;
@@ -28,29 +29,32 @@ namespace Assessment_App.Controllers
         }
 
         [HttpGet]
-        public async Task<List<Country>> GetCountries()
+        public async Task<IActionResult> GetCountries()
         {
 
             string cacheKey = "countriesCacheKey";
 
             if (_cache.TryGetValue<List<Country>>(cacheKey, out countries))
             {
+                //get countries from memory cache
                 countries = _cache.Get<List<Country>>(cacheKey);
-                return countries;
+                return Ok(countries);
             }
 
             else if (_context.Countries.Any())
             {
-                countries = _context.Countries.ToList();
+                //get countries from db
+                countries = _context.Countries.Include(c=> c.Borders).ToList();
+                //save countries to memory cache
                 _cache.Set<List<Country>>(cacheKey, countries, TimeSpan.FromMinutes(1));
-                return countries;
+                return Ok(countries);
             }
             else
             {
                 try
                 {
+                    //get countries from api
                     HttpResponseMessage response = await _client.GetAsync("https://restcountries.com/v3.1/all?fields=name,capital,borders");
-                    response.EnsureSuccessStatusCode();
 
                     // Read the response content
                     string jsonContent = await response.Content.ReadAsStringAsync();
@@ -65,7 +69,7 @@ namespace Assessment_App.Controllers
                         var newCountry = new Country
                         {
                             CommonName = country.Name.Common,
-                            Capital = country.Capital.Count >0 ?country.Capital[0] : null,
+                            Capital = country.Capital.Count > 0 ? country.Capital[0] : null,
                             Borders = new List<Border>()
                         };
 
@@ -76,29 +80,24 @@ namespace Assessment_App.Controllers
                             newCountry.Borders.Add(border);
                         }
 
+                        //save countries to db
                         _context.Countries.Add(newCountry);
                         _context.SaveChanges();
                         countries = _context.Countries.ToList();
+                        //save countries to memory cache
                         _cache.Set<List<Country>>(cacheKey, countries, TimeSpan.FromMinutes(1));
                     }
-                    return countries;
+                    return Ok(countries);
                 }
                 catch (Exception ex)
                 {
-                    // Handle internal server error
-                    Console.WriteLine("Internal Server Error. Please try again later.");
-                    // You might want to log the exception for further investigation
-
-                     return null;
+                    //error handling
+                    return StatusCode(500, new { error = "Internal Server Error" });
 
                 }
 
             }
-
-
         }
-
-
     }
 }
 
