@@ -9,7 +9,7 @@ namespace Assessment_App.Models
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public int CountryId { get; set; }
         public string CommonName { get; set; }
-        public string Capital { get; set; }
+        public string? Capital { get; set; }
         public List<Border> Borders { get; set; } = new();
 
     }
@@ -19,7 +19,6 @@ namespace Assessment_App.Models
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public int BorderId { get; set; }
-        [Required]
         public string BorderName { get; set; }
     }
 }
