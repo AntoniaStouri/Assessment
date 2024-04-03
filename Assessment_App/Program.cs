@@ -1,4 +1,6 @@
 using Assessment_App.Models;
+using Assessment_App.Repositories;
+using Assessment_App.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,6 +14,9 @@ builder.Services.AddDbContext<AppDbContext>(option =>
 builder.Services.AddControllers();
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient();
+builder.Services.AddScoped<ICountryApiService, CountryApiService>();
+builder.Services.AddScoped<ICountryCacheRepository, CountryCacheRepository>();
+builder.Services.AddScoped<ICountryDbRepository, CountryDbRepository>();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

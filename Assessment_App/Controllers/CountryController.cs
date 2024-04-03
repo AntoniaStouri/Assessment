@@ -1,4 +1,6 @@
 ﻿using Assessment_App.Models;
+using Assessment_App.Repositories;
+using Assessment_App.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.EntityFrameworkCore;
@@ -15,87 +17,34 @@ namespace Assessment_App.Controllers
     [ApiController]
     public class CountryController : ControllerBase
     {
-        private readonly IMemoryCache _cache;
-        private readonly AppDbContext _context;
-        private readonly HttpClient _client;
-        private List<Country> countries = new List<Country>();
-        private List<Countries> root = new();
+        private readonly ICountryApiService _countryService;
+        private readonly ICountryCacheRepository _cacheCountryRepository;
+        private readonly ICountryDbRepository _dbCountryRepository;
 
-        public CountryController(IMemoryCache memoryCache, AppDbContext context, HttpClient client)
+        public CountryController(ICountryApiService countryService, ICountryCacheRepository cacheCountryRepository, ICountryDbRepository dbCountryRepository)
         {
-            _cache = memoryCache;
-            _context = context;
-            _client = client;
+            _countryService = countryService;
+            _cacheCountryRepository = cacheCountryRepository;
+            _dbCountryRepository = dbCountryRepository;
         }
 
         [HttpGet]
         public async Task<IActionResult> GetCountries()
         {
-
-            string cacheKey = "countriesCacheKey";
-
-            if (_cache.TryGetValue<List<Country>>(cacheKey, out countries))
+            try
             {
-                //get countries from memory cache
-                countries = _cache.Get<List<Country>>(cacheKey);
+                var countries = _cacheCountryRepository.GetCountriesFromCache();
+                if (countries == null || countries.Count == 0)
+                {
+                    countries = await _countryService.GetCountriesFromApi();
+                    _cacheCountryRepository.SaveCountriesToCache(countries);
+                    _dbCountryRepository.SaveCountriesToDb(countries);
+                }
                 return Ok(countries);
             }
-
-            else if (_context.Countries.Any())
+            catch
             {
-                //get countries from db
-                countries = _context.Countries.Include(c=> c.Borders).ToList();
-                //save countries to memory cache
-                _cache.Set<List<Country>>(cacheKey, countries, TimeSpan.FromMinutes(1));
-                return Ok(countries);
-            }
-            else
-            {
-                try
-                {
-                    //get countries from api
-                    HttpResponseMessage response = await _client.GetAsync("https://restcountries.com/v3.1/all?fields=name,capital,borders");
-
-                    // Read the response content
-                    string jsonContent = await response.Content.ReadAsStringAsync();
-                    List<Countries> root = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Countries>>(jsonContent);
-
-                    // Create a new country
-                    List<Country> countries = new List<Country>();
-
-                    foreach (Countries country in root)
-                    {
-
-                        var newCountry = new Country
-                        {
-                            CommonName = country.Name.Common,
-                            Capital = country.Capital.Count > 0 ? country.Capital[0] : null,
-                            Borders = new List<Border>()
-                        };
-
-
-                        foreach (var borderName in country.Borders)
-                        {
-                            var border = new Border { BorderName = borderName };
-                            newCountry.Borders.Add(border);
-                        }
-
-                        //save countries to db
-                        _context.Countries.Add(newCountry);
-                        _context.SaveChanges();
-                        countries = _context.Countries.ToList();
-                        //save countries to memory cache
-                        _cache.Set<List<Country>>(cacheKey, countries, TimeSpan.FromMinutes(1));
-                    }
-                    return Ok(countries);
-                }
-                catch (Exception ex)
-                {
-                    //error handling
-                    return StatusCode(500, new { error = "Internal Server Error" });
-
-                }
-
+                return BadRequest();
             }
         }
     }
